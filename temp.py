@@ -1,8 +1,45 @@
-import streamlit as st
-from llama_index.core import ListIndex, Document
-from llama_index.readers import SimpleDirectoryReader
 import os
+import streamlit as st
 import openai
+import tempfile
+from llama_index.llms import OpenAI
+from llama_index.core import (
+    VectorStoreIndex,
+    ServiceContext,
+    Document,
+    SimpleDirectoryReader,
+    Settings,
+    ListIndex
+)
+from llama_index.core.node_parser import SimpleNodeParser, SentenceSplitter
+from llama_index.core.postprocessor import SimilarityPostprocessor
+from llama_index.embeddings.openai import OpenAIEmbedding
+
+# OpenAI API key setup
+openai.api_key = os.getenv("OPENAI_API_KEY")
+if not openai.api_key:
+    st.error("OpenAI API key is not set. Please set the OPENAI_API_KEY environment variable.")
+    st.stop()
+
+# Llama-index settings
+Settings.llm = OpenAI(model="gpt-3.5-turbo", temperature=0)
+Settings.embed_model = OpenAIEmbedding()
+
+# Node parser setup
+node_parser = SimpleNodeParser.from_defaults(
+    chunk_size=1024,
+    chunk_overlap=20,
+    paragraph_separator="\n\n",
+    sentence_splitter=SentenceSplitter(chunk_size=1024, chunk_overlap=20)
+)
+
+# Service context setup
+service_context = ServiceContext.from_defaults(
+    llm=Settings.llm,
+    embed_model=Settings.embed_model,
+    node_parser=node_parser
+)
+
 
 # --- ベクトルデータベースの構築 (事前構築) ---
 @st.cache_resource(show_spinner=False)
