@@ -1,4 +1,8 @@
+import streamlit as st
 from llama_index.core import ListIndex, Document
+from llama_index.readers import SimpleDirectoryReader
+import os
+import openai
 
 # --- ベクトルデータベースの構築 (事前構築) ---
 @st.cache_resource(show_spinner=False)
