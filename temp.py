@@ -1,7 +1,6 @@
 import os
 import streamlit as st
 import openai
-import tempfile
 from llama_index.llms import OpenAI
 from llama_index.core import (
     VectorStoreIndex,
@@ -9,10 +8,7 @@ from llama_index.core import (
     Document,
     SimpleDirectoryReader,
     Settings,
-    ListIndex
 )
-from llama_index.core.node_parser import SimpleNodeParser, SentenceSplitter
-from llama_index.core.postprocessor import SimilarityPostprocessor
 from llama_index.embeddings.openai import OpenAIEmbedding
 
 # OpenAI API key setup
@@ -25,75 +21,49 @@ if not openai.api_key:
 Settings.llm = OpenAI(model="gpt-3.5-turbo", temperature=0)
 Settings.embed_model = OpenAIEmbedding()
 
-# Node parser setup
-node_parser = SimpleNodeParser.from_defaults(
-    chunk_size=1024,
-    chunk_overlap=20,
-    paragraph_separator="\n\n",
-    sentence_splitter=SentenceSplitter(chunk_size=1024, chunk_overlap=20)
-)
-
 # Service context setup
 service_context = ServiceContext.from_defaults(
     llm=Settings.llm,
     embed_model=Settings.embed_model,
-    node_parser=node_parser
 )
 
-
-# --- ベクトルデータベースの構築 (事前構築) ---
+# Function to build index without chunking
 @st.cache_resource(show_spinner=False)
-def build_list_index():
-    with st.spinner(text="Wait minutes."):
-        reader = SimpleDirectoryReader(input_dir="./data", recursive=True)
-        docs = reader.load_data()
+def build_file_based_index(directory="./data"):
+    with st.spinner(text="Building index. This may take a few minutes..."):
+        reader = SimpleDirectoryReader(input_dir=directory, recursive=True)
+        documents = []
+        for file in reader.input_files:
+            with open(file, 'r', encoding='utf-8') as f:
+                content = f.read()
+                metadata = {"filename": os.path.basename(file)}
+                doc = Document(text=content, metadata=metadata)
+                documents.append(doc)
         
-        # 各ドキュメントにファイル名をメタデータとして追加
-        for doc in docs:
-            doc.metadata["filename"] = os.path.basename(doc.metadata["file_path"])
-        
-        # ListIndexの作成
-        index = ListIndex.from_documents(docs)
+        index = VectorStoreIndex.from_documents(documents, service_context=service_context)
         return index
 
-# ListIndexを構築
-index = build_list_index()
+# Main Streamlit app logic
+def main():
+    st.title("Document Search Application")
 
-# --- チャットエンジンの初期化 ---
-if "chat_engine" not in st.session_state.keys() and openai.api_key is not None:
-    system_prompt = """
-    あなたはナレッジベースに提供されている書類に関する情報を提供するチャットボットです。
-    利用者の質問に対して、関連するファイルの内容を表示します。
-    LLMを使用せず、単純にキーワードマッチングで関連ファイルを探します。
-    """
-    st.session_state.chat_engine = index.as_chat_engine(
-        chat_mode="context",
-        verbose=True,
-        system_prompt=system_prompt
-    )
+    # Build the index
+    index = build_file_based_index()
 
-# チャット処理
-if openai.api_key is not None:
-    if prompt := st.chat_input("Your question"):
-        st.session_state.messages.append({"role": "user", "content": prompt})
+    # Search interface
+    query = st.text_input("Enter your search query:")
+    if query:
+        # Perform the search
+        retriever = index.as_retriever(similarity_top_k=5)
+        nodes = retriever.retrieve(query)
 
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.write(message["content"])
+        # Display results
+        st.subheader("Search Results:")
+        for i, node in enumerate(nodes, 1):
+            st.write(f"**Result {i}**")
+            st.write(f"File: {node.metadata['filename']}")
+            st.write(f"Content: {node.text[:500]}...")  # Display first 500 characters
+            st.write("---")
 
-    if st.session_state.messages[-1]["role"] != "assistant":
-        with st.chat_message("assistant"):
-            with st.spinner("Searching..."):
-                # キーワード検索を実行
-                retriever = index.as_retriever(similarity_top_k=5)
-                nodes = retriever.retrieve(prompt)
-                
-                # 検索結果を表示
-                st.write("関連するファイルが見つかりました：")
-                for node in nodes:
-                    st.write(f"**ファイル名: {node.metadata['filename']}**")
-                    st.markdown(node.get_content())
-                
-                # メッセージを追加
-                message = {"role": "assistant", "content": "上記のファイルが関連していると思われます。詳細な情報が必要な場合は、さらに質問してください。"}
-                st.session_state.messages.append(message)
+if __name__ == "__main__":
+    main()
