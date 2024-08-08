@@ -2,7 +2,7 @@ import os
 import streamlit as st
 import openai
 from llama_index.embeddings.openai import OpenAIEmbedding
-from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, get_response_synthesizer, StorageContext, load_index_from_storage
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, get_response_synthesizer
 from llama_index.core.retrievers import VectorIndexRetriever
 from llama_index.core.query_engine import RetrieverQueryEngine
 from llama_index.core.postprocessor import SimilarityPostprocessor
@@ -10,23 +10,13 @@ import re
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-# Streamlitページ設定
+# Streamlitページ設定（スクリプトの最初のStreamlitコマンドとして配置）
 st.set_page_config(
     page_title="高度な類似ドキュメント検索",
     page_icon="🔍",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
-
-# 重要なディレクトリパスの設定
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
-STORAGE_DIR = os.path.join(BASE_DIR, "storage")
-
-# ディレクトリの存在確認と作成
-os.makedirs(DATA_DIR, exist_ok=True)
-os.makedirs(STORAGE_DIR, exist_ok=True)
-
 
 # カスタムCSS
 st.markdown("""
@@ -90,8 +80,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-
-
 # OpenAI APIキーの設定
 if "api_key" not in st.session_state:
     st.session_state.api_key = ""
@@ -105,33 +93,15 @@ with st.sidebar:
         openai.api_key = api_key
         st.success("APIキーが設定されました")
 
-# ベクトルデータベースの構築または読み込み
+# ベクトルデータベースの構築
 @st.cache_resource(show_spinner=False)
-def get_vector_index():
-    try:
-        storage_context = StorageContext.from_defaults(persist_dir=STORAGE_DIR)
-        if os.path.exists(os.path.join(STORAGE_DIR, "docstore.json")):
-            # 既存のインデックスを読み込む
-            index = load_index_from_storage(storage_context)
-            st.sidebar.success("既存のベクトルデータベースを読み込みました。")
-        else:
-            # 新しいインデックスを作成する
-            with st.spinner(text="ベクトルデータベースを構築中..."):
-                if not os.listdir(DATA_DIR):
-                    st.error(f"データディレクトリ {DATA_DIR} が空です。データファイルを追加してください。")
-                    return None
-                reader = SimpleDirectoryReader(input_dir=DATA_DIR, recursive=True)
-                docs = reader.load_data()
-                embed_model = OpenAIEmbedding(openai_api_key=openai.api_key)
-                index = VectorStoreIndex.from_documents(docs, storage_context=storage_context)
-                index.storage_context.persist()
-            st.sidebar.success("新しいベクトルデータベースを作成しました。")
+def build_vector_database():
+    with st.spinner(text="ベクトルデータベースを構築中..."):
+        reader = SimpleDirectoryReader(input_dir="./data", recursive=True)
+        docs = reader.load_data()
+        embed_model = OpenAIEmbedding(openai_api_key=openai.api_key)
+        index = VectorStoreIndex.from_documents(docs)
         return index
-    except Exception as e:
-        st.error(f"ベクトルデータベースの処理中にエラーが発生しました: {str(e)}")
-        return None
-
-# その他の関数（split_into_chunks, score_chunks, select_best_chunks, highlight_text）は変更なし...
 
 # テキストをチャンクに分割する関数
 def split_into_chunks(text, chunk_size=200, overlap=50):
@@ -163,41 +133,34 @@ def highlight_text(text, query):
         text = re.sub(f'(?i){re.escape(word)}', lambda m: f'<span class="highlight">{m.group()}</span>', text)
     return text
 
-
-
-
 # メイン処理
 if st.session_state.api_key:
-    index = get_vector_index()
+    index = build_vector_database()
     
-    if index is not None:
-        st.title("高度な類似ドキュメント検索")
-        
-        # 検索フォーム
-        with st.form(key='search_form'):
-            query = st.text_input("検索クエリを入力してください:", key="search_input")
-            submit_button = st.form_submit_button(label='検索')
-        
-        if submit_button and query:
-            with st.spinner("検索中..."):
-                # クエリエンジンの設定
-                retriever = VectorIndexRetriever(
-                    index=index,
-                    similarity_top_k=10,
-                )
-                response_synthesizer = get_response_synthesizer()
-                query_engine = RetrieverQueryEngine(
-                    retriever=retriever,
-                    response_synthesizer=response_synthesizer,
-                    node_postprocessors=[SimilarityPostprocessor(similarity_cutoff=0.7)],
-                )
-                
-                # クエリ実行
-                response = query_engine.query(query)
-                
-                # 検索結果の表示（変更なし）...
-                
-
+    st.title("高度な類似ドキュメント検索")
+    
+    # 検索フォーム
+    with st.form(key='search_form'):
+        query = st.text_input("検索クエリを入力してください:", key="search_input")
+        submit_button = st.form_submit_button(label='検索')
+    
+    if submit_button and query:
+        with st.spinner("検索中..."):
+            # クエリエンジンの設定
+            retriever = VectorIndexRetriever(
+                index=index,
+                similarity_top_k=10,
+            )
+            response_synthesizer = get_response_synthesizer()
+            query_engine = RetrieverQueryEngine(
+                retriever=retriever,
+                response_synthesizer=response_synthesizer,
+                node_postprocessors=[SimilarityPostprocessor(similarity_cutoff=0.7)],
+            )
+            
+            # クエリ実行
+            response = query_engine.query(query)
+            
             # 検索結果の表示
             for i, node in enumerate(response.source_nodes, 1):
                 content = node.node.get_content()
@@ -237,22 +200,9 @@ if st.session_state.api_key:
                         mime="text/plain",
                         key=f"download_button_{i}"
                     )
-                    
-                # 総合回答の表示
-                st.subheader("総合回答:")
-                st.write(response)
-    else:
-        st.warning("ベクトルデータベースの初期化に失敗しました。上記のエラーメッセージを確認してください。")
+            
+            # 総合回答の表示
+            st.subheader("総合回答:")
+            st.write(response)
 else:
     st.warning("OpenAI APIキーを設定してください。サイドバーを開いて設定してください。")
-
-# データベース更新ボタン
-if st.sidebar.button("ベクトルデータベースを更新"):
-    # セッションステートをクリアしてキャッシュを無効化
-    st.cache_resource.clear()
-    # ストレージディレクトリを削除
-    import shutil
-    if os.path.exists(STORAGE_DIR):
-        shutil.rmtree(STORAGE_DIR)
-    st.sidebar.success("ベクトルデータベースが更新されました。ページを再読み込みしてください。")
-    st.experimental_rerun()
