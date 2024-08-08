@@ -10,6 +10,14 @@ import re
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
+# Streamlitページ設定（スクリプトの最初のStreamlitコマンドとして配置）
+st.set_page_config(
+    page_title="高度な類似ドキュメント検索",
+    page_icon="🔍",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+
 # カスタムCSS
 st.markdown("""
 <style>
@@ -71,14 +79,6 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
-# Streamlitページ設定
-st.set_page_config(
-    page_title="高度な類似ドキュメント検索",
-    page_icon="🔍",
-    layout="wide",
-    initial_sidebar_state="collapsed",
-)
 
 # OpenAI APIキーの設定
 if "api_key" not in st.session_state:
