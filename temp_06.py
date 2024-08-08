@@ -12,7 +12,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 # Streamlitページ設定（スクリプトの最初のStreamlitコマンドとして配置）
 st.set_page_config(
-    page_title="かわいい類似ドキュメント検索",
+    page_title="ドキュメント検索",
     page_icon="🌸",
     layout="wide",
     initial_sidebar_state="collapsed",
